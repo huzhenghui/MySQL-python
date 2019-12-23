@@ -1,0 +1,31 @@
+- name: "Get mysql version: mysql -V"
+  command: mysql -V
+  register: mysql_version_value
+  changed_when: false
+
+- name: Set mysql_distribution default value is Unknown
+  set_fact:
+    mysql_version_string: "{{ mysql_version_value.stdout }}"
+    mysql_distribution: "Unknown"
+
+- name: "Mysql version"
+  debug: var=mysql_version_string
+
+- name: Check MySQL-Community
+  set_fact: mysql_distribution="MySQL-Community"
+  # mysql  Ver 8.0.18 for Linux on x86_64 (MySQL Community Server - GPL)
+  when: mysql_version_string is search('MySQL Community Server')
+
+- name: Check MariaDB
+  set_fact:
+    mysql_distribution: "MariaDB"
+  # mysql  Ver 15.1 Distrib 5.5.64-MariaDB, for Linux (x86_64) using readline 5.1
+  when: mysql_version_string is search('MariaDB')
+
+- name: Percona Server
+  set_fact: mysql_distribution="Percona"
+# mysql  Ver 8.0.17-8 for Linux on x86_64 (Percona Server (GPL), Release 8, Revision 868a4ef)
+  when: mysql_version_string is search('Percona Server')
+
+- name: MySQL Distribution
+  debug: var=mysql_distribution

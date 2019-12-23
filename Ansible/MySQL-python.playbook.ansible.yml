@@ -1,0 +1,224 @@
+- hosts: all
+  become: yes
+  become_user: root
+  gather_facts: True
+  tasks:
+    - name: whoami
+      command: /usr/bin/whoami
+      register: command_return_value
+      changed_when: false
+    - debug: var=command_return_value.stdout
+
+    - name: Check MySQL distribution
+      include_tasks: ./common/check.distribution.tasks.ansible.yml
+      when: mysql_distribution is undefined
+
+    - name: "objdump -p /usr/lib64/mysql/libmysqlclient.so.21"
+      command: /usr/bin/objdump -p /usr/lib64/mysql/libmysqlclient.so.21
+      register: command_return_value
+      changed_when: false
+    - debug: msg="{{ command_return_value.stdout | regex_findall('^\d\s.*$', multiline=True) }}"
+
+    - name: yum install -q -y rpm-build yum-utils gnupg2 rsync deltarpm gcc
+      yum:
+        name:
+          - rpm-build
+          - yum-utils
+          - gnupg2
+          - rsync
+          - deltarpm
+          - gcc
+      register: yum_return_value
+    - debug: var=yum_return_value
+
+    - name: mkdir /usr/local/builds/rpmbuild/BUILD/
+      file:
+        path: /usr/local/builds/rpmbuild/BUILD/
+        state: directory
+      register: file_return_value
+    - debug: var=file_return_value
+
+    - name: mkdir /usr/local/builds/rpmbuild/RPMS/
+      file:
+        path: /usr/local/builds/rpmbuild/RPMS/
+        state: directory
+      register: file_return_value
+    - debug: var=file_return_value
+
+    - name: mkdir /usr/local/builds/rpmbuild/SOURCES/
+      file:
+        path: /usr/local/builds/rpmbuild/SOURCES/
+        state: directory
+      register: file_return_value
+    - debug: var=file_return_value
+
+    - name: mkdir /usr/local/builds/rpmbuild/SPECS/
+      file:
+        path: /usr/local/builds/rpmbuild/SPECS/
+        state: directory
+      register: file_return_value
+    - debug: var=file_return_value
+
+    - name: mkdir /usr/local/builds/rpmbuild/SRPMS/
+      file:
+        path: /usr/local/builds/rpmbuild/SRPMS/
+        state: directory
+      register: file_return_value
+    - debug: var=file_return_value
+
+    - name: echo "%_topdir /usr/local/builds/rpmbuild" > ~/.rpmmacros
+      lineinfile:
+        path: ~/.rpmmacros
+        create: yes
+        line: "%_topdir /usr/local/builds/rpmbuild"
+        state: present
+      register: lineinfile_return_value
+    - debug: var=lineinfile_return_value
+
+    - name: cd "$(mktemp -d)"
+      tempfile:
+        state: directory
+      register: tempfile_return_value
+    - debug: var=tempfile_return_value
+
+    - name: Set temporary_directory_path
+      set_fact:
+        temporary_directory_path: "{{ tempfile_return_value.path }}"
+
+    - name: pwd
+      command:
+        cmd: pwd
+        chdir: "{{ temporary_directory_path }}"
+      register: command_return_value
+      changed_when: false
+    - debug: var=command_return_value.stdout
+
+    - name: yumdownloader --source -q MySQL-python
+      command:
+        cmd: /usr/bin/yumdownloader --source -q MySQL-python
+        chdir: "{{ temporary_directory_path }}"
+        creates: "{{ temporary_directory_path }}/MySQL-python-1.2.5-1.el7.src.rpm"
+      register: command_return_value
+    - debug: var=command_return_value.stdout_lines
+
+    - name: rpm2cpio "$(ls -1 MySQL-python*src.rpm)" | cpio -idmv
+      shell:
+        cmd: /usr/bin/rpm2cpio "$(ls -1 MySQL-python*src.rpm)" | /usr/bin/cpio -idmv
+        chdir: "{{ temporary_directory_path }}"
+        creates: "{{ temporary_directory_path }}/MySQL-python.spec"
+      register: shell_return_value
+    - debug: var=shell_return_value.stderr_lines
+
+    - name: SRC_ZIP="$(ls -1 MySQL-python*.zip)"
+      shell:
+        cmd: ls -1 MySQL-python*.zip
+        chdir: "{{ temporary_directory_path }}"
+      register: SRC_ZIP
+      changed_when: false
+    - debug: var=SRC_ZIP.stdout
+
+    - name: unzip "${SRC_ZIP}"
+      unarchive:
+        src: "{{ temporary_directory_path }}/{{ SRC_ZIP.stdout }}"
+        dest: "{{ temporary_directory_path }}"
+        remote_src: yes
+      register: unarchive_return_value
+    - debug: var=unarchive_return_value
+
+    - name: SRC_DIR=$(find . -maxdepth 1 -type d -name "MySQL-python*")
+      shell:
+        cmd: /usr/bin/find . -maxdepth 1 -type d -name "MySQL-python*"
+        chdir: "{{ temporary_directory_path }}"
+      register: SRC_DIR
+      changed_when: false
+    - debug: var=SRC_DIR.stdout
+
+    - name: sed -i 's/#include "my_config.h"/#define NO_MY_CONFIG/' "${SRC_DIR}/_mysql.c"
+      lineinfile:
+        path: "{{ temporary_directory_path }}/{{ SRC_DIR.stdout }}/_mysql.c"
+        regexp: '#include "my_config.h"'
+        line: '#define NO_MY_CONFIG'
+      register: lineinfile_return_value
+    - debug: var=lineinfile_return_value
+
+    - name: fgrep -m1 -B3 -A1 -n NO_MY_CONFIG "${SRC_DIR}/_mysql.c"
+      command:
+        cmd: /usr/bin/fgrep -m1 -B3 -A1 -n NO_MY_CONFIG "_mysql.c"
+        chdir: "{{ temporary_directory_path }}/{{ SRC_DIR.stdout }}"
+      register: command_return_value
+      changed_when: false
+    - debug: var=command_return_value.stdout_lines
+
+    - name: zip -uv "${SRC_ZIP}" "${SRC_DIR}/_mysql.c"
+      archive:
+        path: "{{ temporary_directory_path }}/{{ SRC_DIR.stdout }}"
+        dest: "{{ temporary_directory_path }}/{{ SRC_ZIP.stdout }}"
+        format: zip
+      register: archive_return_value
+    - debug: var=archive_return_value
+
+    - name: rsync -ac ./ /usr/local/builds/rpmbuild/SOURCES/
+      synchronize:
+        src: "{{ temporary_directory_path }}/"
+        dest: /usr/local/builds/rpmbuild/SOURCES/
+      delegate_to: "{{ inventory_hostname }}"
+      register: synchronize_return_value
+    - debug: var=synchronize_return_value
+
+    - name: cp -a MySQL-python.spec /usr/local/builds/rpmbuild/SPECS/
+      copy:
+        src: "{{ temporary_directory_path }}/MySQL-python.spec"
+        dest: /usr/local/builds/rpmbuild/SPECS/
+        remote_src: yes
+      register: copy_return_value
+    - debug: var=copy_return_value
+
+    - name: 'rpmbuild --define "buildno 2" -bs /usr/local/builds/rpmbuild/SPECS/MySQL-python.spec'
+      command: /usr/bin/rpmbuild --define "buildno 2" -bs /usr/local/builds/rpmbuild/SPECS/MySQL-python.spec
+      register: command_return_value
+      changed_when: true
+    - debug: var=command_return_value.stdout
+
+    - name: "yum-builddep -q -y /usr/local/builds/rpmbuild/SRPMS/MySQL-python-1.2.5-1.el7.src.rpm"
+      command:
+        cmd: /usr/bin/yum-builddep -q -y /usr/local/builds/rpmbuild/SRPMS/MySQL-python-1.2.5-1.el7.src.rpm
+      register: command_return_value
+      changed_when: true
+      retries: 10
+    - debug: var=command_return_value.stdout_lines
+
+    - name: rpmbuild --define "buildno 2" --rebuild /usr/local/builds/rpmbuild/SRPMS/MySQL-python-1.2.5-1.el7.src.rpm
+      command: /usr/bin/rpmbuild --define "buildno 2" --rebuild /usr/local/builds/rpmbuild/SRPMS/MySQL-python-1.2.5-1.el7.src.rpm
+      register: command_return_value
+      changed_when: true
+    - debug: var=command_return_value.stdout_lines
+
+    - name: "yum localinstall -q -y /usr/local/builds/rpmbuild/RPMS/x86_64/MySQL-python-1.2.5-1.el7.x86_64.rpm"
+      yum:
+        name: /usr/local/builds/rpmbuild/RPMS/x86_64/MySQL-python-1.2.5-1.el7.x86_64.rpm
+        state: present
+      register: yum_return_value
+    - debug: var=yum_return_value
+
+    - name: ldd /usr/lib64/python2.7/site-packages/_mysql.so | grep libmysqlclient.so
+      shell:
+        cmd: /usr/bin/ldd /usr/lib64/python2.7/site-packages/_mysql.so | /usr/bin/grep libmysqlclient.so
+      register: shell_return_value
+      changed_when: false
+    - debug: var=shell_return_value.stdout
+
+    - name: rpm -qpR /usr/local/builds/rpmbuild/RPMS/x86_64/MySQL-python-1.2.5-1.el7.x86_64.rpm
+      command: /usr/bin/rpm -qpR /usr/local/builds/rpmbuild/RPMS/x86_64/MySQL-python-1.2.5-1.el7.x86_64.rpm
+      args:
+        warn: false
+      register: command_return_value
+      changed_when: false
+    - debug: var=command_return_value.stdout_lines
+
+    - name: fetch /usr/local/builds/rpmbuild/RPMS/x86_64/MySQL-python-1.2.5-1.el7.x86_64.rpm
+      fetch:
+        src: /usr/local/builds/rpmbuild/RPMS/x86_64/MySQL-python-1.2.5-1.el7.x86_64.rpm
+        dest: "../releases/MySQL-python-1.2.5-1.el7.x86_64.{{ mysql_distribution }}.rpm"
+        flat: yes
+      register: fetch_return_value
+    - debug: var=fetch_return_value
