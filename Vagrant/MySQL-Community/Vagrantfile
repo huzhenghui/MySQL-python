@@ -12,8 +12,9 @@ Vagrant.configure("2") do |config|
 
   # Every Vagrant development environment requires a box. You can search for
   # boxes at https://vagrantcloud.com/search.
-  config.vm.box = "huzhenghui/CentOS-7-MySQL-8"
-
+  config.vm.box = "huzhenghui/MySQL-CentOS-7"
+  config.vm.box_version = "8.0.18-7.7.1908-3"
+  
   # Disable automatic box update checking. If you disable this, then
   # boxes will only be checked for updates when the user runs
   # `vagrant box outdated`. This is not recommended.
@@ -67,8 +68,8 @@ Vagrant.configure("2") do |config|
   #   apt-get update
   #   apt-get install -y apache2
   # SHELL
-  config.vm.provision "ansible" do |ansible|
+  config.vm.provision "empty", type: "ansible" do |ansible|
     ansible.compatibility_mode = "2.0"
-    ansible.playbook = "MySQL-python.ansible.yml"
+    ansible.playbook = "../../Ansible/common/empty.playbook.ansible.yml"
   end
 end
