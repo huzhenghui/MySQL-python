@@ -2,6 +2,6 @@
 basepath=$(cd `/usr/bin/dirname $0`; pwd)
 echo "${basepath}"
 echo
-${basepath}/Vagrant/2.inventory_list.generate.sh
+${basepath}/MySQL-Vagrant-Basic/Vagrant/inventory_list.generate.sh
 echo
-/usr/local/bin/ansible-playbook -i "${basepath}/Vagrant/inventory_list" "${basepath}/Ansible/MySQL-python.playbook.ansible.yml"
+/usr/local/bin/ansible-playbook --limit "MySQL-Community,Percona-Server" --inventory-file "${basepath}/MySQL-Vagrant-Basic/Vagrant/inventory_list" "${basepath}/Ansible/MySQL-python.playbook.ansible.yml"

@@ -1,0 +1,3 @@
+[submodule "MySQL-Vagrant-Basic"]
+	path = MySQL-Vagrant-Basic
+	url = https://github.com/huzhenghui/MySQL-Vagrant-Basic
